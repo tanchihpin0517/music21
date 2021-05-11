@@ -501,12 +501,20 @@ class _EnvironmentCore:
         '/var/folders/x5/rymq2tx16lqbpytwb1n_cc4c0000gn/T'
 
         >>> import os
+        >>> import sys
         >>> e = environment.Environment()
-        >>> e.getDefaultRootTempDir() == pathlib.Path(t) / 'music21'
+        >>> src_dir = e.getDefaultRootTempDir()
+        >>> tgt_dir= pathlib.Path(t) / 'music21'
+        >>> accessible = os.access(tgt_dir, os.R_OK) and os.access(tgt_dir, os.W_OK)
+        >>> if sys.platform.startswith('linux') and not accessible:\
+                tgt_dir = pathlib.Path(t) / f'music21-{os.getuid()}';
+        >>> src_dir == tgt_dir
         True
 
         If failed to create the subdirectory (OSError is raised), this function
-        will return a temporary directory which is created by
+        will return (1), for Linux platforms, a subdirectory under the system
+        temp directory which is named with 'music21-$UID' or (2), for other
+        platforms, a temporary directory which is created by
         tempfile.mkdtemp(prefix="music21-"), which is named with 'music21-'
         plus 8 hashed codes. The location of this directory depends on OS.
 
@@ -517,15 +525,25 @@ class _EnvironmentCore:
 
         # this returns the root temp dir; this does not create a new dir
         self.defaultRootTempDir = pathlib.Path(tempfile.gettempdir()) / 'music21'
-        # if this path already exists, we have nothing more to do
-        if self.defaultRootTempDir.exists():
+
+        # if this path already exists, readable and writable, we have nothing more to do
+        readable = os.access(self.defaultRootTempDir, os.R_OK)
+        writable = os.access(self.defaultRootTempDir, os.W_OK)
+        if self.defaultRootTempDir.exists() and readable and writable:
             return self.defaultRootTempDir
         else:
             # make this directory as a temp directory
             try:
                 self.defaultRootTempDir.mkdir()
             except OSError:
-                self.defaultRootTempDir = pathlib.Path(tempfile.mkdtemp(prefix="music21-"))
+                if sys.platform.startswith('linux'):
+                    uid = os.getuid()
+                    dir_path = pathlib.Path(tempfile.gettempdir()) / f'music21-{uid}'
+                else:
+                    dir_path = pathlib.Path(tempfile.mkdtemp(prefix="music21-"))
+                if not dir_path.exists():
+                    dir_path.mkdir()
+                self.defaultRootTempDir = dir_path
             return self.defaultRootTempDir
 
     def getKeysToPaths(self):
