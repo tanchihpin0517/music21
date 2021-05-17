@@ -432,10 +432,9 @@ class _EnvironmentCore:
             ]:
                 self.__setitem__(name, value)  # use for key checking
 
-    def _checkAccessibility(self, path):
+    def _checkAccessibility(self, path: Union[str, pathlib.Path]) -> bool:
         '''
-        return True if the path exists, is readable and writable.
-        'path' must be a string or a subclass of pathlib.Path
+        Return True if the path exists, is readable and writable.
         '''
         if isinstance(path, (pathlib.Path, str)):
             exists = os.path.exists(path)
@@ -519,15 +518,15 @@ class _EnvironmentCore:
         True
 
         If failed to create the subdirectory (OSError is raised), this function
-        will return (1), for Linux platforms, a subdirectory under the system
-        temp directory which is named with 'music21-userid-$UID' or (2), for
-        other platforms, a temporary directory which is created by
+        will return (1), for Linux and Mac platforms, a subdirectory under the
+        system temp directory which is named with 'music21-userid-$UID' or (2),
+        for other platforms, a temporary directory which is created by
         tempfile.mkdtemp(prefix="music21-"), which is named with 'music21-'
         plus 8 hashed codes, and (3) if failing for both above, it will return
         the directory from tempfile.gettempdir(). The location of this directory
         depends on OS.
 
-        Note the temporary dirctory may be different in each python session.
+        Note the temporary directory may be different in each python session.
         '''
         if self._checkAccessibility(self.defaultRootTempDir):
             return self.defaultRootTempDir
@@ -543,7 +542,7 @@ class _EnvironmentCore:
             try:
                 self.defaultRootTempDir.mkdir()
             except OSError:  # directory already exists or permission denied
-                if common.getPlatform() == 'nix':
+                if common.getPlatform() in ['nix', 'darwin']:
                     uid = os.getuid()
                     dir_path = pathlib.Path(tempfile.gettempdir()) / f'music21-userid-{uid}'
                 else:
@@ -1584,7 +1583,7 @@ class Test(unittest.TestCase):
         self.assertEqual(list(env['localCorpusSettings']), ['/a', '/b'])
 
     @unittest.skipUnless(
-        common.getPlatform() == 'nix',
+        common.getPlatform() in ['nix', 'darwin'],
         'os.getuid can be called only on Unix platforms'
     )
     def testGetDefaultRootTempDir(self):
@@ -1602,10 +1601,16 @@ class Test(unittest.TestCase):
             newTempDir = e.getDefaultRootTempDir()
             self.assertIn(f'music21-userid-{os.getuid()}', str(newTempDir))
         finally:
-            e['directoryScratch'] = oldScratchDir
-            # Restore owner read/write/exec permissions and original path
+            # Restore original permissions and original path
             os.chmod(oldTempDir, oldPermission)
-            shutil.rmtree(newTempDir)
+            e['directoryScratch'] = oldScratchDir
+
+            # If getting OSError while trying to create the directory on the first fallback,
+            # the default temp directory from tempfile.gettempdir() will be return on the second
+            # fallback. We don't want to delete the default temp directory. Therefore we check
+            # it before deleting.
+            if not newTempDir.samefile(tempfile.gettempdir()):
+                shutil.rmtree(newTempDir)
 
 
 # -----------------------------------------------------------------------------
